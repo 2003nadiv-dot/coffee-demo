@@ -1,0 +1,324 @@
+{
+  "title": "ORSO Uno Espresso Machine",
+  "subtitle": "Interactive exploded view · concept product",
+  "package": "pro",
+  "model": "models/orso-uno.glb",
+  "units": "m",
+  "accent": "#d2552f",
+  "scene": "showroom",
+  "autoSpin": false,
+  "explodeScale": 1,
+  "camera": {
+    "theta": 0.62,
+    "phi": 1.2
+  },
+  "parts": [
+    {
+      "node": "Top_Cover",
+      "name": "Top cover & cup warmer",
+      "category": "Body",
+      "shell": true,
+      "explode": [
+        0,
+        0.26,
+        0
+      ],
+      "description": "Brushed-steel lid. Heat rising from the boiler warms cups placed on the grill."
+    },
+    {
+      "node": "Left_Panel",
+      "name": "Left side panel",
+      "category": "Body",
+      "shell": true,
+      "explode": [
+        -0.2,
+        0,
+        0
+      ],
+      "description": "Removable steel side panel for easy servicing."
+    },
+    {
+      "node": "Right_Panel",
+      "name": "Right side panel",
+      "category": "Body",
+      "shell": true,
+      "explode": [
+        0.2,
+        0,
+        0
+      ],
+      "description": "Removable steel side panel for easy servicing."
+    },
+    {
+      "node": "Front_Panel",
+      "name": "Front panel",
+      "category": "Body",
+      "shell": true,
+      "explode": [
+        0,
+        0,
+        0.15
+      ],
+      "description": "Holds the gauge, buttons and steam knob, and carries the brand badge."
+    },
+    {
+      "node": "Base_Chassis",
+      "name": "Base & rear chassis",
+      "category": "Body",
+      "explode": [
+        0,
+        0,
+        -0.06
+      ],
+      "description": "Rigid frame every component bolts to, with anti-slip feet and the power inlet."
+    },
+    {
+      "node": "Water_Tank",
+      "name": "Water tank (2 L)",
+      "category": "Water",
+      "explode": [
+        0,
+        0.2,
+        -0.2
+      ],
+      "description": "Removable rear tank. Lifts out from the top for refilling."
+    },
+    {
+      "node": "Pump",
+      "name": "Vibration pump",
+      "category": "Water",
+      "explode": [
+        0.14,
+        0,
+        -0.08
+      ],
+      "description": "Builds the 9 bar of pressure needed to push water through finely ground coffee."
+    },
+    {
+      "node": "Water_Lines",
+      "name": "Copper water lines",
+      "category": "Water",
+      "explode": [
+        0.04,
+        0.03,
+        -0.03
+      ],
+      "description": "Carry water from the tank to the pump, boiler, group head and steam valve."
+    },
+    {
+      "node": "Boiler",
+      "name": "Boiler & heater",
+      "category": "Heating",
+      "explode": [
+        0,
+        0.11,
+        0.02
+      ],
+      "description": "Stainless boiler with a wrapped heating element. Brings water to about 93 °C for brewing."
+    },
+    {
+      "node": "Controller_Board",
+      "name": "PID controller",
+      "category": "Electronics",
+      "explode": [
+        -0.13,
+        0.0,
+        0.0
+      ],
+      "description": "Reads the boiler temperature many times a second and keeps it within ±1 °C."
+    },
+    {
+      "node": "Solenoid_Valve",
+      "name": "3-way solenoid valve",
+      "category": "Water",
+      "explode": [
+        -0.1,
+        0.05,
+        0.04
+      ],
+      "description": "Releases leftover pressure after each shot so the coffee puck comes out dry."
+    },
+    {
+      "node": "Group_Head",
+      "name": "Group head",
+      "category": "Brewing",
+      "explode": [
+        0,
+        0.05,
+        0.33
+      ],
+      "description": "Heavy chrome-plated brass head that keeps brew water at a stable temperature."
+    },
+    {
+      "node": "Portafilter",
+      "name": "Portafilter",
+      "category": "Brewing",
+      "explode": [
+        0,
+        -0.03,
+        0.5
+      ],
+      "description": "Holds the ground coffee. Walnut handle and a double spout for two cups."
+    },
+    {
+      "node": "Pressure_Gauge",
+      "name": "Pressure gauge",
+      "category": "Controls",
+      "explode": [
+        -0.07,
+        0.07,
+        0.27
+      ],
+      "description": "Shows brewing pressure live; the green zone marks the ideal 8–11 bar."
+    },
+    {
+      "node": "Control_Buttons",
+      "name": "Controls",
+      "category": "Controls",
+      "explode": [
+        0.0,
+        0.1,
+        0.28
+      ],
+      "description": "Brew and steam buttons with status lights, plus the power switch."
+    },
+    {
+      "node": "Steam_Knob",
+      "name": "Steam knob",
+      "category": "Controls",
+      "explode": [
+        0.09,
+        0.08,
+        0.28
+      ],
+      "description": "Opens the steam valve. Turn further for more steam power."
+    },
+    {
+      "node": "Steam_Wand",
+      "name": "Steam wand",
+      "category": "Brewing",
+      "explode": [
+        0.17,
+        0,
+        0.32
+      ],
+      "description": "Swivelling chrome wand for frothing milk, with a cool-touch grip."
+    },
+    {
+      "node": "Drip_Tray",
+      "name": "Drip tray",
+      "category": "Brewing",
+      "explode": [
+        0,
+        0,
+        0.4
+      ],
+      "description": "Catches drips and the solenoid's water release. Slides out for emptying."
+    }
+  ],
+  "spin": [
+    {
+      "node": "Steam_Knob",
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "speed": 0.3
+    }
+  ],
+  "paint": [
+    {
+      "label": "Body",
+      "materials": [
+        "Body"
+      ]
+    },
+    {
+      "label": "Trim",
+      "materials": [
+        "Trim"
+      ]
+    },
+    {
+      "label": "Accents",
+      "materials": [
+        "Accent"
+      ]
+    }
+  ],
+  "editions": [
+    {
+      "label": "Midnight Copper",
+      "materials": {
+        "Body": {
+          "color": "#222326",
+          "roughness": 0.55,
+          "metalness": 0.5
+        },
+        "Chrome": {
+          "color": "#c9875a",
+          "roughness": 0.18,
+          "metalness": 1
+        },
+        "Trim": {
+          "color": "#0f0f11"
+        },
+        "Accent": {
+          "color": "#c9875a",
+          "roughness": 0.3,
+          "metalness": 0.8
+        },
+        "Grate": {
+          "color": "#3a3b3f"
+        }
+      }
+    }
+  ],
+  "baseEditionName": "Classic Steel",
+  "specs": [
+    [
+      "Size",
+      "24 × 28 × 33 cm"
+    ],
+    [
+      "Weight",
+      "8.5 kg"
+    ],
+    [
+      "Boiler",
+      "0.5 L stainless steel"
+    ],
+    [
+      "Pump",
+      "15 bar vibration pump"
+    ],
+    [
+      "Water tank",
+      "2.0 L, removable"
+    ],
+    [
+      "Temperature",
+      "PID control, ±1 °C"
+    ],
+    [
+      "Power",
+      "1,200 W"
+    ]
+  ],
+  "compare": {
+    "person": false,
+    "items": [
+      {
+        "label": "Smartphone",
+        "size": [
+          0.0715,
+          0.147,
+          0.008
+        ]
+      }
+    ]
+  },
+  "sources": [],
+  "note": "Original concept product made for this demo. ORSO is not a real brand; specifications are illustrative."
+}
