@@ -516,8 +516,10 @@ function start(cfg) {
       var paints = cfg.paint || [], eds = cfg.editions || [];
       var ph = '';
       if (eds.length) {
-        ph += '<span class="lbl">Edition</span><div class="grp"><button class="chip" data-ed="-1" aria-pressed="true">' + esc(cfg.baseEditionName || 'Classic') + '</button>' +
-          eds.map(function (ed, i) { return '<button class="chip" data-ed="' + i + '" aria-pressed="false">' + esc(ed.label) + '</button>'; }).join('') + '</div>';
+        // cfg.baseEditionLast: list the model's own look after the editions (use with startEdition to make an edition the main design)
+        var baseChip = '<button class="chip" data-ed="-1" aria-pressed="true">' + esc(cfg.baseEditionName || 'Classic') + '</button>';
+        var edChips = eds.map(function (ed, i) { return '<button class="chip" data-ed="' + i + '" aria-pressed="false">' + esc(ed.label) + '</button>'; }).join('');
+        ph += '<span class="lbl">Edition</span><div class="grp">' + (cfg.baseEditionLast ? edChips + baseChip : baseChip + edChips) + '</div>';
         if (paints.length) ph += '<span class="sep"></span>';
       }
       if (paints.length) {
@@ -597,7 +599,7 @@ function start(cfg) {
           document.querySelectorAll('[data-fin]').forEach(function (x2) { x2.setAttribute('aria-pressed', x2 === b ? 'true' : 'false'); });
         };
       });
-      $('#bPaintReset').onclick = function () { applyEdition(-1); document.querySelectorAll('[data-fin]').forEach(function (x2) { x2.setAttribute('aria-pressed', 'false'); }); };
+      $('#bPaintReset').onclick = function () { applyEdition(cfg.startEdition !== undefined ? cfg.startEdition : -1); document.querySelectorAll('[data-fin]').forEach(function (x2) { x2.setAttribute('aria-pressed', 'false'); }); };
       paints.forEach(function (pt, i) { if (pt.default) paintMats[i].forEach(function (m) { m.color.set(pt.default).convertSRGBToLinear(); }); });
       allMats.forEach(function (m) { if (m.color) m.userData.orig.color = m.color.clone(); });
       syncPaint();
