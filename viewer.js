@@ -83,19 +83,38 @@ function start(cfg) {
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = !LITE;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;   // PCF + radius below = soft, wide shadow edges
   renderer.localClippingEnabled = true;
 
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(34, 1, 0.01, 1000);
 
+  // reflections: a photo-studio "room" with big softboxes, so metal and gloss get clean, product-shot highlights
+  function studioEnv() {
+    var s = new THREE.Scene(), box = new THREE.BoxGeometry(1, 1, 1), plane = new THREE.PlaneGeometry(1, 1);
+    var room = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ side: THREE.BackSide }));
+    room.material.color.setRGB(0.5, 0.5, 0.51); room.scale.set(22, 14, 22); room.position.y = 5; s.add(room);
+    var ground = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+    ground.material.color.setRGB(0.18, 0.18, 0.185); ground.scale.set(21, 21, 1); ground.rotation.x = -Math.PI / 2; ground.position.y = -1.9; s.add(ground);
+    function panel(w, h, x, y, z, k, col) {
+      var m = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+      m.material.color.set(col || 0xffffff).multiplyScalar(k); m.scale.set(w, h, 1); m.position.set(x, y, z); m.lookAt(0, 0.4, 0); s.add(m);
+    }
+    panel(7, 7, 0, 8.5, 0.5, 6.0);                 // overhead softbox
+    panel(1.6, 7.5, -9, 3.2, 3.5, 9.0);            // key strip, left-front
+    panel(1.2, 7.5, 8.5, 3.2, -5.5, 5.5, 0xdfeaff); // rim strip, right-back (slightly cool)
+    panel(15, 6, 1, 2.2, 9.8, 2.4);                // big soft front fill (bright, even metal fronts)
+    panel(3.5, 3.5, 6.5, 5.5, 6, 2.2, 0xfff1e2);   // small warm card, right-front
+    return s;
+  }
   var pm = new THREE.PMREMGenerator(renderer);
-  if (THREE.RoomEnvironment) scene.environment = pm.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+  if (cfg.environment === 'room' && THREE.RoomEnvironment) scene.environment = pm.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+  else scene.environment = pm.fromScene(studioEnv(), 0.025).texture;
   pm.dispose();
 
   var hemi = new THREE.HemisphereLight(0xdfe9f5, 0x2a2620, 0.4); scene.add(hemi);
   var key = new THREE.DirectionalLight(0xffffff, 1.6); key.castShadow = !LITE;
-  key.shadow.mapSize.set(LITE ? 512 : 2048, LITE ? 512 : 2048);
+  key.shadow.mapSize.set(LITE ? 512 : 2048, LITE ? 512 : 2048); key.shadow.radius = LITE ? 1 : 2.2;
   scene.add(key); scene.add(key.target);
   var rim = new THREE.DirectionalLight(0x9cc4ff, 0.6); scene.add(rim);
 
@@ -132,6 +151,23 @@ function start(cfg) {
   var floorMat = new THREE.MeshStandardMaterial({ color: 0x1b232d, roughness: 0.9, metalness: 0, alphaMap: fadeTex, transparent: true, depthWrite: false });
   var floor = new THREE.Mesh(new THREE.CircleGeometry(1, 64), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; floor.renderOrder = -1; scene.add(floor);
+  // contact shadow: the soft dark patch right under the product that makes it sit on the floor (works in Lite mode too)
+  // drawn once the model size is known: a blurred copy of the product's footprint, darkest in the middle
+  function contactTexture(fx, fz) {
+    var N = 256, c = document.createElement('canvas'); c.width = c.height = N; var x = c.getContext('2d');
+    var w = N * fx, h = N * fz, off = N * 4, rr = Math.min(w, h) * 0.18;
+    x.shadowColor = 'rgba(0,0,0,1)'; x.shadowOffsetX = off;
+    [[N * 0.16, 0.7], [N * 0.05, 0.75], [N * 0.015, 0.6]].forEach(function (b) {          // wide soft halo + tighter core
+      x.shadowBlur = b[0]; x.fillStyle = 'rgba(0,0,0,' + b[1] + ')';
+      x.beginPath(); var x0 = (N - w) / 2 - off, y0 = (N - h) / 2;
+      if (x.roundRect) x.roundRect(x0, y0, w, h, rr); else x.rect(x0, y0, w, h);
+      x.fill();
+    });
+    var t = new THREE.CanvasTexture(c); return t;
+  }
+  var contactMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false, color: 0xffffff });
+  var contact = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), contactMat);
+  contact.rotation.x = -Math.PI / 2; contact.renderOrder = 0; contact.visible = cfg.contactShadow !== false; scene.add(contact);
 
   /* ---------------- load model ---------------- */
   if (!THREE.GLTFLoader) { showStatus('3D loader missing', 'GLTFLoader.js did not load. Check your internet connection.'); return; }
@@ -176,8 +212,11 @@ function start(cfg) {
     camera.near = R * 0.01; camera.far = R * 400; camera.updateProjectionMatrix();
     sky.scale.setScalar(R * 150);
     floor.scale.setScalar(R * 9);
+    var cpad = R * 0.45, cw = SIZE.x + cpad * 2, cd = SIZE.z + cpad * 2;
+    contactMat.map = contactTexture(SIZE.x * 0.97 / cw, SIZE.z * 0.97 / cd); contactMat.needsUpdate = true;
+    contact.scale.set(cw, cd, 1); contact.position.set(CENTER.x, R * 0.0015, CENTER.z);
     var sc = key.shadow.camera; sc.near = R * 0.1; sc.far = R * 12;
-    key.shadow.bias = -0.0004; key.shadow.normalBias = R * 0.004;
+    key.shadow.bias = -0.0012; key.shadow.normalBias = R * (LITE ? 0.004 : 0.012);
 
     // materials: one copy per mesh so highlighting one part never lights another
     var allMats = [];
@@ -258,7 +297,7 @@ function start(cfg) {
     var clipPlane = new THREE.Plane(V3(-1, 0, 0), 0), slice = { axis: 'x', pos: 0.5 };
     var tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
 
-    var lift = 0, lastLift = 0;
+    var lift = 0, lastLift = 0, contactBase = 0.6;
     function applyPositions() {
       var lo = 0;
       parts.forEach(function (p) { if (p.node.visible) lo = Math.min(lo, p.center.y - p.size.y / 2 + p.dir.y * p.ex); });
@@ -491,8 +530,8 @@ function start(cfg) {
       var byName = function (n) { return allMats.filter(function (m) { return m.userData.name === n; }); };
       var paintMats = paints.map(function (pt) { return allMats.filter(function (m) { return (pt.materials || []).indexOf(m.userData.name) >= 0; }); });
       // remember every material's original look so Reset / Classic can restore it
-      allMats.forEach(function (m) { m.userData.orig = { color: m.color ? m.color.clone() : null, map: m.map, rough: m.roughness, metal: m.metalness }; });
-      var restoreAll = function () { allMats.forEach(function (m) { var o = m.userData.orig; if (o.color) m.color.copy(o.color); m.map = o.map; m.roughness = o.rough; m.metalness = o.metal; m.needsUpdate = true; }); };
+      allMats.forEach(function (m) { m.userData.orig = { color: m.color ? m.color.clone() : null, map: m.map, rough: m.roughness, metal: m.metalness, emissive: m.emissive ? m.emissive.clone() : null, ei: m.emissiveIntensity }; });
+      var restoreAll = function () { allMats.forEach(function (m) { var o = m.userData.orig; if (o.color) m.color.copy(o.color); m.map = o.map; m.roughness = o.rough; m.metalness = o.metal; if (o.emissive) { m.emissive.copy(o.emissive); m.emissiveIntensity = o.ei; } m.needsUpdate = true; }); };
       var toHex = function (c) { return '#' + c.clone().convertLinearToSRGB().getHexString(); };
       var syncPaint = function () { document.querySelectorAll('[data-paint]').forEach(function (inp) { var l = paintMats[+inp.dataset.paint]; if (l.length) inp.value = toHex(l[0].color); }); };
       var texCache = {}, texLoader = new THREE.TextureLoader();
@@ -535,11 +574,16 @@ function start(cfg) {
               if (o.project === 'box') boxUV(m, o.tile || 0.25);
               if (o.roughness !== undefined) m.roughness = o.roughness;
               if (o.metalness !== undefined) m.metalness = o.metalness;
+              if (o.emissive && m.emissive) { m.emissive.set(o.emissive).convertSRGBToLinear(); m.emissiveIntensity = o.emissiveIntensity !== undefined ? o.emissiveIntensity : 1; }   // glow, e.g. RGB backlight
               m.needsUpdate = true;
             });
           });
         }
         document.querySelectorAll('[data-ed]').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.ed === i ? 'true' : 'false'); });
+        // the edition's glow becomes the part's resting look, so hover/selection highlight returns to it
+        allMats.forEach(function (m) { if (m.emissive) { m.userData.baseEmissive = m.emissive.getHex(); m.userData.baseEI = m.emissiveIntensity; } });
+        parts.forEach(function (p) { p.lvl = -1; }); if (typeof refreshHL === 'function') refreshHL();
+        if (window.__checkGlow) window.__checkGlow();
         syncPaint();
       };
       document.querySelectorAll('[data-ed]').forEach(function (b) { b.onclick = function () { applyEdition(+b.dataset.ed); }; });
@@ -573,6 +617,7 @@ function start(cfg) {
       renderer.toneMappingExposure = L.exp;
       allMats.forEach(function (mm) { if (mm.envMapIntensity !== undefined) mm.envMapIntensity = L.env; });
       document.body.classList.toggle('lightui', L.light);
+      contactBase = (L.light ? 0.75 : 0.9) * (cfg.contactShadowStrength || 1);
       document.querySelectorAll('[data-scene]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.scene === m ? 'true' : 'false'); });
     }
 
@@ -682,9 +727,31 @@ function start(cfg) {
 
     /* ---------------- controls wiring ---------------- */
     var slider = $('#ex'), pct = $('#pct');
-    slider.addEventListener('input', function () { var v = slider.value / 100; parts.forEach(function (p) { p.exT = v; }); ensureFit(); });
-    $('#bExplode').onclick = function () { parts.forEach(function (p) { p.exT = 1; }); slider.value = 100; ensureFit(); };
-    $('#bAssemble').onclick = function () { parts.forEach(function (p) { p.exT = 0; p.userT.set(0, 0, 0); }); slider.value = 0; };
+    slider.addEventListener('input', function () { var v = slider.value / 100; staggerT.forEach(clearTimeout); parts.forEach(function (p) { p.exT = v; }); ensureFit(); });
+    // explode in layers: outer / top parts lift first, inner parts follow; assembling runs the other way round
+    var staggerT = [];
+    var layerOrder = parts.map(function (p) {
+      var c = p.center.clone().add(p.dir); return { p: p, k: p.dir.lengthSq() < 1e-12 ? -1e9 : c.y * 2 + c.distanceTo(CENTER) };
+    }).sort(function (a, b) { return b.k - a.k; }).map(function (x) { return x.p; });
+    function staggered(target, reverse) {
+      staggerT.forEach(clearTimeout); staggerT = [];
+      var list = reverse ? layerOrder.slice().reverse() : layerOrder, step = cfg.explodeStagger !== undefined ? cfg.explodeStagger : Math.min(90, 900 / Math.max(list.length, 1));
+      list.forEach(function (p, i) {
+        if (!step || !i) { p.exT = target; return; }
+        staggerT.push(setTimeout(function () { p.exT = target; }, i * step));
+      });
+    }
+    // aim at the middle of the exploded stack, not the assembled product, so lifted layers stay in frame
+    function explodedMidY() {
+      var lo = Infinity, hi = -Infinity;
+      parts.forEach(function (p) { if (!p.node.visible) return; lo = Math.min(lo, p.center.y - p.size.y / 2 + p.dir.y); hi = Math.max(hi, p.center.y + p.size.y / 2 + p.dir.y); });
+      return isFinite(lo) ? (lo + hi) / 2 : CENTER.y;
+    }
+    $('#bExplode').onclick = function () {
+      staggered(1, false); slider.value = 100; ensureFit(); setTimeout(ensureFit, 1000);
+      camT.ty = Math.max(camT.ty, CENTER.y + (explodedMidY() - CENTER.y) * 0.85 + lift * 0.6);
+    };
+    $('#bAssemble').onclick = function () { parts.forEach(function (p) { p.userT.set(0, 0, 0); }); staggered(0, true); slider.value = 0; camT.ty = CENTER.y; };
     document.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { setView(b.dataset.view); stopSpin(); }; });
     document.querySelectorAll('[data-scene]').forEach(function (b) { b.onclick = function () { setScene(b.dataset.scene); }; });
     function syncChips() { document.querySelectorAll('[data-t]').forEach(function (b) { b.setAttribute('aria-pressed', state[b.dataset.t] ? 'true' : 'false'); }); }
@@ -765,7 +832,9 @@ function start(cfg) {
       if (flashT > 0) { flashT -= dt; if (flashT <= 0) hint.classList.add('gone'); }
       var pc = Math.round(mex * 100); if (pc !== lastPct) { pct.textContent = pc + '%'; lastPct = pc; }
       updateLabels();
-      renderer.render(scene, camera);
+      contactMat.opacity = contactBase * (1 - 0.35 * mex);
+      draw();
+      watchPost(dt);
     }
     requestAnimationFrame(frame);
     setTimeout(function () { if (frames < 2 && !lost) showStatus('The 3D view is taking too long to start', 'Your device may be struggling. Lite mode should fix it.', true); }, 15000);
@@ -857,8 +926,126 @@ function start(cfg) {
       };
     }
 
+    /* ---------------- desktop post-processing: ambient occlusion, glow, depth of field ---------------- */
+    // Loaded only on desktop, after the model is up. If anything fails or the computer is too slow, it quietly
+    // falls back to the normal render. cfg.post = false turns it off; cfg.ao / cfg.bloom tune strength (0 = off).
+    var post = null, postDead = false, postSlow = false;
+    var touchy = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var glowOn = false;
+    function checkGlow() {
+      glowOn = allMats.some(function (m) { return m.emissive && m.userData.baseEI * Math.max(m.emissive.r, m.emissive.g, m.emissive.b) > 0.25 && m.userData.baseEmissive === m.emissive.getHex(); });
+    }
+    window.__checkGlow = checkGlow;
+    function exBase() {
+      var sc0 = document.querySelector('script[src*="examples/js/loaders/GLTFLoader"]');
+      return sc0 ? sc0.getAttribute('src').replace(/loaders\/GLTFLoader\.js.*$/, '') : 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/';
+    }
+    function loadSeq(urls, done) {
+      var i = 0;
+      (function next() {
+        if (i >= urls.length) return done(true);
+        var el = document.createElement('script'); el.src = urls[i++]; el.onload = next; el.onerror = function () { done(false); };
+        document.head.appendChild(el);
+      })();
+    }
+    function initPost() {
+      if (!renderer.capabilities.isWebGL2 || !THREE.SSAOPass || !THREE.UnrealBloomPass || !THREE.WebGLMultisampleRenderTarget) return;
+      var sz = renderer.getDrawingBufferSize(new THREE.Vector2()), W = sz.x, H = sz.y;
+      var rt = new THREE.WebGLMultisampleRenderTarget(W, H, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, stencilBuffer: true });   // stencil => 24-bit depth (16-bit z-fights)
+      rt.samples = 4;
+      var ssao = new THREE.SSAOPass(scene, camera, Math.ceil(W / 2), Math.ceil(H / 2));
+      ssao.normalRenderTarget.depthTexture.type = THREE.UnsignedIntType;   // 24-bit depth: no banding on big scenes
+      ssao.kernelRadius = R * 0.07;
+      var span = camera.far - camera.near; ssao.minDistance = R * 0.003 / span; ssao.maxDistance = R * 0.22 / span;
+      var bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.9, 0.5, 0.5);
+      var comp = new THREE.ShaderMaterial({
+        uniforms: { tColor: { value: rt.texture }, tAO: { value: ssao.blurRenderTarget.texture }, tDepth: { value: ssao.normalRenderTarget.depthTexture },
+          aoAmt: { value: 0 }, dof: { value: 0 }, focus: { value: 1 }, keep: { value: 0 }, near: { value: camera.near }, far: { value: camera.far }, px: { value: new THREE.Vector2(1 / W, 1 / H) } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: [
+          '#include <packing>',
+          'uniform sampler2D tColor, tAO, tDepth; uniform float aoAmt, dof, focus, keep, near, far; uniform vec2 px; varying vec2 vUv;',
+          'vec3 col(vec2 uv){ return texture2D(tColor, uv).rgb * mix(1.0, texture2D(tAO, uv).r, aoAmt); }',
+          'float dist(vec2 uv){ return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, near, far); }',
+          'float blurAt(vec2 uv){ return clamp(max(abs(dist(uv) - focus) - keep, 0.0) / focus * 2.5, 0.0, 1.0) * dof * 8.0; }',
+          'void main(){',
+          '  vec3 c = col(vUv);',
+          '  if (dof > 0.0) {',
+          '    float coc = blurAt(vUv);',
+          '    if (coc > 0.6) { vec3 acc = c; float n = 1.0;',
+          '      for (int i = 1; i < 24; i++) { float a = float(i) * 2.39996; float r = sqrt(float(i) / 24.0) * coc;',
+          '        vec2 uv = vUv + vec2(cos(a), sin(a)) * r * px; float w = step(coc - 2.0, blurAt(uv)) + 0.05; acc += col(uv) * w; n += w; }',
+          '      c = acc / n; }',
+          '  }',
+          '  gl_FragColor = linearToOutputTexel(vec4(c, 1.0));',
+          '}'].join('\n'),
+        depthTest: false, depthWrite: false, toneMapped: false
+      });
+      var qScene = new THREE.Scene(), qCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), comp);
+      q.frustumCulled = false; qScene.add(q);
+      post = { rt: rt, ssao: ssao, bloom: bloom, comp: comp, qScene: qScene, qCam: qCam, W: W, H: H, slow: 0, n: 0, t0: performance.now() };
+      checkGlow();
+    }
+    function postResize() {
+      if (!post) return;
+      var sz = renderer.getDrawingBufferSize(new THREE.Vector2());
+      if (sz.x === post.W && sz.y === post.H) return;
+      post.W = sz.x; post.H = sz.y; post.rt.setSize(sz.x, sz.y); post.ssao.setSize(Math.ceil(sz.x / 2), Math.ceil(sz.y / 2));
+      post.bloom.setSize(sz.x, sz.y); post.comp.uniforms.px.value.set(1 / sz.x, 1 / sz.y);
+    }
+    function draw(o) {
+      o = o || {};
+      if (!post || postDead || (postSlow && !o.still)) { renderer.render(scene, camera); return; }
+      try {
+        postResize();
+        var aoOn = (cfg.ao !== 0) && !state.xray && !state.wire && !state.slice, dof = o.dof || 0;
+        var bloomOn = glowOn && cfg.bloom !== 0 && !LOOKS[sceneMode].light;   // glow reads best (and only makes sense) in the dark scenes
+        renderer.setRenderTarget(post.rt); renderer.clear(); renderer.render(scene, camera);
+        if (aoOn || dof) {
+          var u = post.ssao.ssaoMaterial.uniforms;
+          u.cameraProjectionMatrix.value.copy(camera.projectionMatrix); u.cameraInverseProjectionMatrix.value.copy(camera.projectionMatrixInverse);
+          u.cameraNear.value = camera.near; u.cameraFar.value = camera.far;
+          post.ssao.overrideVisibility(); post.ssao.renderOverride(renderer, post.ssao.normalMaterial, post.ssao.normalRenderTarget, 0x7777ff, 1.0); post.ssao.restoreVisibility();
+        }
+        if (aoOn) {
+          var su = post.ssao.ssaoMaterial.uniforms; su.kernelRadius.value = post.ssao.kernelRadius; su.minDistance.value = post.ssao.minDistance; su.maxDistance.value = post.ssao.maxDistance;
+          post.ssao.renderPass(renderer, post.ssao.ssaoMaterial, post.ssao.ssaoRenderTarget);
+          post.ssao.renderPass(renderer, post.ssao.blurMaterial, post.ssao.blurRenderTarget);
+        }
+        if (bloomOn) { post.bloom.strength = 0.9 * (cfg.bloom || 1); post.bloom.render(renderer, null, post.rt, 0, false); }
+        var cu = post.comp.uniforms;
+        cu.aoAmt.value = aoOn ? 0.75 * (cfg.ao || 1) : 0; cu.dof.value = dof; cu.near.value = camera.near; cu.far.value = camera.far;
+        var fp = selected ? selected.node.getWorldPosition(new THREE.Vector3()) : null;
+        cu.focus.value = fp ? camera.position.distanceTo(fp) : cam.r; cu.keep.value = R * 0.55;
+        renderer.setRenderTarget(null); renderer.render(post.qScene, post.qCam);
+      } catch (err) {
+        postDead = true; renderer.setRenderTarget(null); renderer.render(scene, camera);
+        if (window.console) console.warn('Post-processing switched off:', err);
+      }
+    }
+    // if the extra effects make this computer drop below ~30 fps, turn them off for good
+    function watchPost() {
+      if (!post || postDead || postSlow || document.hidden) return;
+      var now = performance.now(), d = now - (post.last || now); post.last = now;
+      if (d > 250) return;                       // tab was in the background
+      post.n++; post.slow += d > 34 ? 1 : 0;
+      if (post.n >= 120) { if (post.slow > 70) { postSlow = true; if (window.console) console.info('Live effects off: frame rate too low (still images keep them)'); } post.n = 0; post.slow = 0; }
+    }
+    if (!LITE && !touchy && cfg.post !== false && window.innerWidth > 820) {
+      setTimeout(function () {
+        var b = exBase();
+        loadSeq([b + 'postprocessing/Pass.js', b + 'shaders/CopyShader.js', b + 'math/SimplexNoise.js', b + 'shaders/SSAOShader.js', b + 'postprocessing/SSAOPass.js',
+          b + 'shaders/LuminosityHighPassShader.js', b + 'postprocessing/UnrealBloomPass.js'], function (ok) {
+          if (!ok) return;
+          try { initPost(); } catch (err) { post = null; if (window.console) console.warn('Post-processing unavailable:', err); }
+        });
+      }, 600);
+    }
+    window.__post = function () { return { on: !!post && !postDead, live: !!post && !postDead && !postSlow, glow: glowOn }; };
+
     // still image: render one frame and grab it (used for client renders). Shift+P downloads a PNG.
-    function snapshot() { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); }
+    // opts.dof: soft background/foreground blur for hero stills (0 = off, 1 = normal, 2 = strong); focus = selected part or product centre
+    function snapshot(opts) { opts = opts || {}; draw({ dof: opts.dof || 0, still: true }); return renderer.domElement.toDataURL('image/png'); }
     window.addEventListener('keydown', function (e) {
       if (e.shiftKey && (e.key === 'P' || e.key === 'p') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) {
         var a = document.createElement('a'); a.href = snapshot();
