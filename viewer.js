@@ -957,7 +957,7 @@ function start(cfg) {
       ssao.normalRenderTarget.depthTexture.type = THREE.UnsignedIntType;   // 24-bit depth: no banding on big scenes
       ssao.kernelRadius = R * 0.07;
       var span = camera.far - camera.near; ssao.minDistance = R * 0.003 / span; ssao.maxDistance = R * 0.22 / span;
-      var bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.9, 0.5, 0.5);
+      var bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.9, 0.5, 0.82);
       var comp = new THREE.ShaderMaterial({
         uniforms: { tColor: { value: rt.texture }, tAO: { value: ssao.blurRenderTarget.texture }, tDepth: { value: ssao.normalRenderTarget.depthTexture },
           aoAmt: { value: 0 }, dof: { value: 0 }, focus: { value: 1 }, keep: { value: 0 }, near: { value: camera.near }, far: { value: camera.far }, px: { value: new THREE.Vector2(1 / W, 1 / H) } },
@@ -998,7 +998,7 @@ function start(cfg) {
       if (!post || postDead || (postSlow && !o.still)) { renderer.render(scene, camera); return; }
       try {
         postResize();
-        var aoOn = (cfg.ao !== 0) && !state.xray && !state.wire && !state.slice, dof = o.dof || 0;
+        var aoOn = (cfg.ao !== 0) && !state.xray && !state.wire && !state.slice, dof = meanEx() > 0.2 ? 0 : (o.dof || 0);   // blur only suits assembled hero shots
         var bloomOn = glowOn && cfg.bloom !== 0 && !LOOKS[sceneMode].light;   // glow reads best (and only makes sense) in the dark scenes
         renderer.setRenderTarget(post.rt); renderer.clear(); renderer.render(scene, camera);
         if (aoOn || dof) {
