@@ -36,9 +36,9 @@ window.addEventListener('error', function (e) {
 
 /* ---------------- packages: which features each tier gets ---------------- */
 var TIERS = {
-  starter:  { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 0, xray: 0, wire: 0, cutaway: 0, dims: 0, compare: 0, paint: 0, animate: 0, autospin: 1, maxParts: 8,   scenes: ['studio', 'light'] },
-  standard: { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 0, dims: 1, compare: 0, paint: 0, animate: 0, autospin: 1, maxParts: 20,  scenes: ['showroom', 'studio', 'light'] },
-  pro:      { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 1, dims: 1, compare: 1, paint: 1, animate: 1, autospin: 1, maxParts: 999, scenes: ['showroom', 'blueprint', 'sunset', 'studio', 'light', 'day'] }
+  starter:  { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 0, xray: 0, wire: 0, cutaway: 0, dims: 0, compare: 0, paint: 0, animate: 0, autospin: 1, ar: 0, guide: 0, maxParts: 8,   scenes: ['studio', 'light'] },
+  standard: { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 0, dims: 1, compare: 0, paint: 0, animate: 0, autospin: 1, ar: 1, guide: 0, maxParts: 20,  scenes: ['showroom', 'studio', 'light'] },
+  pro:      { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 1, dims: 1, compare: 1, paint: 1, animate: 1, autospin: 1, ar: 1, guide: 1, maxParts: 999, scenes: ['showroom', 'blueprint', 'sunset', 'studio', 'light', 'day'] }
 };
 var SCENE_NAMES = { showroom: 'Showroom', blueprint: 'Blueprint', sunset: 'Sunset', studio: 'Studio', light: 'White', day: 'Outdoor', night: 'Night' };
 var LOOKS = {
@@ -228,7 +228,7 @@ function start(cfg) {
         if (dir.length() < R * 0.05) dir.set(0, 1, 0);
         dir.normalize().multiplyScalar(R * 0.9 * (cfg.explodeScale || 1));
       }
-      var p = { id: 'p' + i, node: n, name: d.name || n.name || ('Part ' + (i + 1)), cat: d.category || 'Parts', desc: d.description || '',
+      var p = { id: 'p' + i, key: d.node || n.name, node: n, name: d.name || n.name || ('Part ' + (i + 1)), cat: d.category || 'Parts', desc: d.description || '',
         shell: !!d.shell, dir: dir, ex: 0, exT: 0, user: new THREE.Vector3(), userT: new THREE.Vector3(),
         origWorld: n.getWorldPosition(new THREE.Vector3()), center: ctr, size: sz, mats: [], meshes: [], hidden: false, lvl: 0 };
       parts.push(p);
@@ -344,6 +344,8 @@ function start(cfg) {
     var tg = toggles.filter(function (t) { return F[t[0]] && !(t[0] === 'animate' && !spins.length); });
     if (tg.length) html += '<span class="sep"></span><div class="grp"><span class="lbl">Show</span>' + tg.map(function (t) { return '<button class="chip" data-t="' + (t[2] || t[0]) + '" aria-pressed="false">' + t[1] + '</button>'; }).join('') + '</div>';
     if (F.paint && ((cfg.paint && cfg.paint.length) || (cfg.editions && cfg.editions.length))) html += '<span class="sep"></span><button class="btn" id="bPaint" aria-pressed="false">🎨 ' + (cfg.editions && cfg.editions.length ? 'Design' : 'Colors') + '</button>';
+    var GUIDE = F.guide && cfg.guide && cfg.guide.length ? cfg.guide : null;
+    if (GUIDE) html += '<span class="sep"></span><button class="btn pri" id="bGuide">&#9654; Step by step</button>';
     chipRow.innerHTML = html;
     if (!F.explode) $('#exRow').classList.add('hide');
 
@@ -768,6 +770,89 @@ function start(cfg) {
     setTimeout(function () { if (frames < 2 && !lost) showStatus('The 3D view is taking too long to start', 'Your device may be struggling. Lite mode should fix it.', true); }, 15000);
 
     // test / integration hook
+    /* ---------------- step-by-step guide ---------------- */
+    // cfg.guide = [{ title, text, parts: [node names taken out at this step], focus: node, view: 'iso'|'front'|'side'|'top' }]
+    if (GUIDE) {
+      var byKey = {}; parts.forEach(function (p) { byKey[p.key] = p; });
+      var gBox = $('#guide'), gi = -1;
+      var showStep = function (i) {
+        gi = Math.max(0, Math.min(GUIDE.length - 1, i));
+        var out = {};
+        for (var k = 0; k <= gi; k++) (GUIDE[k].parts || []).forEach(function (n) { out[n] = 1; });
+        parts.forEach(function (p) { p.exT = out[p.key] ? 1 : 0; p.userT.set(0, 0, 0); });
+        isolated = null; refreshVis();
+        slider.value = Math.round(meanT() * 100);
+        var st = GUIDE[gi];
+        if (st.view) setView(st.view); else ensureFit();
+        select(st.focus && byKey[st.focus] ? byKey[st.focus] : null);
+        $('#gStep').textContent = 'Step ' + (gi + 1) + ' of ' + GUIDE.length;
+        $('#gTitle').textContent = st.title || '';
+        $('#gText').textContent = st.text || '';
+        $('#gPrev').disabled = gi === 0;
+        $('#gNext').textContent = gi === GUIDE.length - 1 ? 'Finish' : 'Next';
+        if (gBox.classList.contains('hide') && window.innerWidth > 820) {   // on desktop the guide takes the parts-list spot
+          partsWasOpen = !$('#parts').classList.contains('hide');
+          $('#parts').classList.add('hide'); $('#tglParts').setAttribute('aria-pressed', 'false'); resize();
+        }
+        gBox.classList.remove('hide'); hint.classList.add('gone'); stopSpin();
+      };
+      var partsWasOpen = false;
+      var exitGuide = function () {
+        gi = -1; gBox.classList.add('hide');
+        if (partsWasOpen) { $('#parts').classList.remove('hide'); $('#tglParts').setAttribute('aria-pressed', 'true'); partsWasOpen = false; resize(); }
+      };
+      $('#bGuide').onclick = function () { showStep(0); };
+      $('#gPrev').onclick = function () { showStep(gi - 1); };
+      $('#gNext').onclick = function () { if (gi >= GUIDE.length - 1) exitGuide(); else showStep(gi + 1); };
+      $('#gExit').onclick = exitGuide;
+      window.addEventListener('keydown', function (e) {
+        if (gi < 0) return;
+        if (e.key === 'ArrowRight') $('#gNext').click();
+        else if (e.key === 'ArrowLeft' && gi > 0) showStep(gi - 1);
+        else if (e.key === 'Escape') exitGuide();
+      });
+      window.__guide = { show: showStep, exit: exitGuide, steps: GUIDE.length };
+    }
+
+    /* ---------------- AR: view it in your room (phones and tablets) ---------------- */
+    // Uses Google's <model-viewer>: WebXR or Scene Viewer on Android, Quick Look on iPhone/iPad.
+    // The model must be in real-world scale; non-metre models skip Scene Viewer (it ignores scaling).
+    var bAR = $('#bAR');
+    var mobileAR = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (F.ar && bAR && (mobileAR || /[#&]ar\b/.test(location.hash))) {
+      var arUnit = cfg.scale || UNIT[cfg.units || 'm'] || 1, mv = null, modelURL = null;
+      var prepAR = function () {
+        if (mv) return;
+        if (window.MODEL_B64) {
+          var bin = atob(window.MODEL_B64), u8 = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+          modelURL = URL.createObjectURL(new Blob([u8], { type: 'model/gltf-binary' }));
+        } else modelURL = new URL(cfg.model, location.href).href;
+        mv = document.createElement('model-viewer');
+        mv.setAttribute('src', modelURL);
+        mv.setAttribute('ar', '');
+        mv.setAttribute('ar-scale', 'fixed');
+        mv.setAttribute('loading', 'eager');
+        mv.setAttribute('ar-modes', (arUnit === 1 && !window.MODEL_B64) ? 'webxr scene-viewer quick-look' : 'webxr quick-look');
+        if (arUnit !== 1) mv.setAttribute('scale', arUnit + ' ' + arUnit + ' ' + arUnit);
+        mv.setAttribute('aria-hidden', 'true');
+        mv.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+        document.body.appendChild(mv);
+        if (!(window.customElements && customElements.get('model-viewer'))) {
+          var sc = document.createElement('script'); sc.type = 'module';
+          sc.src = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js';
+          document.head.appendChild(sc);
+        }
+      };
+      bAR.classList.remove('hide');
+      setTimeout(prepAR, 1500);            // load in the background so the tap can open AR straight away
+      bAR.onclick = function () {
+        prepAR();
+        if (mv && mv.canActivateAR) mv.activateAR();
+        else flash(mv && mv.loaded === false ? 'Getting AR ready, tap again in a moment' : 'AR is not available on this device or browser', 3);
+      };
+    }
+
     // still image: render one frame and grab it (used for client renders). Shift+P downloads a PNG.
     function snapshot() { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); }
     window.addEventListener('keydown', function (e) {

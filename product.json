@@ -320,5 +320,93 @@
     ]
   },
   "sources": [],
-  "note": "Original concept product made for this demo. ORSO is not a real brand; specifications are illustrative."
+  "note": "Original concept product made for this demo. ORSO is not a real brand; specifications are illustrative.",
+  "guide": [
+    {
+      "title": "Meet the ORSO Uno",
+      "text": "A home espresso machine with 18 parts inside. Press Next to take it apart one step at a time.",
+      "parts": [],
+      "view": "iso"
+    },
+    {
+      "title": "Remove the portafilter and drip tray",
+      "text": "Twist the portafilter out of the group head and slide the drip tray forward. These come out every day for cleaning.",
+      "parts": [
+        "Portafilter",
+        "Drip_Tray"
+      ],
+      "focus": "Portafilter",
+      "view": "iso"
+    },
+    {
+      "title": "Lift off the top cover",
+      "text": "The cup-warmer lid lifts straight up. Heat rising from the boiler keeps your cups warm here.",
+      "parts": [
+        "Top_Cover"
+      ],
+      "focus": "Top_Cover",
+      "view": "iso"
+    },
+    {
+      "title": "Take off the side panels",
+      "text": "Both steel side panels come away, opening up the inside of the machine.",
+      "parts": [
+        "Left_Panel",
+        "Right_Panel"
+      ],
+      "view": "iso"
+    },
+    {
+      "title": "Lift out the water tank",
+      "text": "The 2-litre tank sits at the back and lifts out from the top for refilling.",
+      "parts": [
+        "Water_Tank"
+      ],
+      "focus": "Water_Tank",
+      "view": "iso"
+    },
+    {
+      "title": "Open the front",
+      "text": "The front panel carries the pressure gauge, buttons, steam knob, steam wand and the chrome group head.",
+      "parts": [
+        "Front_Panel",
+        "Pressure_Gauge",
+        "Control_Buttons",
+        "Steam_Knob",
+        "Steam_Wand",
+        "Group_Head"
+      ],
+      "focus": "Group_Head",
+      "view": "iso"
+    },
+    {
+      "title": "The heart: the boiler",
+      "text": "The stainless boiler and its wrapped heater bring the water to about 93 °C for brewing.",
+      "parts": [
+        "Boiler"
+      ],
+      "focus": "Boiler",
+      "view": "iso"
+    },
+    {
+      "title": "The water path",
+      "text": "The vibration pump pushes water through the copper lines at up to 15 bar. The solenoid valve releases pressure after each shot.",
+      "parts": [
+        "Pump",
+        "Water_Lines",
+        "Solenoid_Valve"
+      ],
+      "focus": "Pump",
+      "view": "iso"
+    },
+    {
+      "title": "The brain: the PID controller",
+      "text": "This board reads the boiler temperature many times a second and keeps it within 1 °C. That's the whole machine, apart. Press Finish to explore freely.",
+      "parts": [
+        "Controller_Board"
+      ],
+      "focus": "Controller_Board",
+      "view": "iso"
+    }
+  ]
 }
