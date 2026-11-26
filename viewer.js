@@ -309,7 +309,8 @@ function start(cfg) {
     var cam = { theta: cam0.theta !== undefined ? cam0.theta : 0.7, phi: cam0.phi !== undefined ? cam0.phi : 1.1, r: 1, tx: 0, ty: CENTER.y, tz: 0 };
     var camT = Object.assign({}, cam);
     function fitDist() {
-      var f = (1 + 0.9 * clamp(meanT(), 0, 1)) * (state.compare ? cmpFit : 1);
+      var mt = meanT(), anyOut = parts.some(function (p) { return p.exT > 0.5; });
+      var f = (1 + 0.9 * clamp(Math.max(mt, anyOut ? 0.8 : 0), 0, 1)) * (state.compare ? cmpFit : 1);   // frame for the full spread once any part is out
       var vfov = camera.fov * Math.PI / 180, hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
       return R * f / Math.sin(Math.min(vfov, hfov) / 2) * 1.08;
     }
@@ -784,6 +785,9 @@ function start(cfg) {
         slider.value = Math.round(meanT() * 100);
         var st = GUIDE[gi];
         if (st.view) setView(st.view); else ensureFit();
+        var up = 0; parts.forEach(function (p) { if (p.exT > 0.5) up = Math.max(up, p.dir.y); });
+        camT.ty = CENTER.y + up * 0.4;            // keep lifted parts in frame
+        [500, 1100, 1800].forEach(function (t) { setTimeout(function () { if (gi >= 0) ensureFit(); }, t); });   // re-fit while parts fly out
         select(st.focus && byKey[st.focus] ? byKey[st.focus] : null);
         $('#gStep').textContent = 'Step ' + (gi + 1) + ' of ' + GUIDE.length;
         $('#gTitle').textContent = st.title || '';
