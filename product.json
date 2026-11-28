@@ -99,9 +99,9 @@
       "name": "Copper water lines",
       "category": "Water",
       "explode": [
-        0.04,
-        0.03,
-        -0.03
+        0.19,
+        0.1,
+        0
       ],
       "description": "Carry water from the tank to the pump, boiler, group head and steam valve."
     },
@@ -111,7 +111,7 @@
       "category": "Heating",
       "explode": [
         0,
-        0.11,
+        0.21,
         0.02
       ],
       "description": "Stainless boiler with a wrapped heating element. Brings water to about 93 °C for brewing."

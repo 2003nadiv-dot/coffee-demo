@@ -36,9 +36,9 @@ window.addEventListener('error', function (e) {
 
 /* ---------------- packages: which features each tier gets ---------------- */
 var TIERS = {
-  starter:  { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 0, xray: 0, wire: 0, cutaway: 0, dims: 0, compare: 0, paint: 0, animate: 0, autospin: 1, ar: 0, guide: 0, maxParts: 8,   scenes: ['studio', 'light'] },
-  standard: { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 0, dims: 1, compare: 0, paint: 0, animate: 0, autospin: 1, ar: 1, guide: 0, maxParts: 20,  scenes: ['showroom', 'studio', 'light'] },
-  pro:      { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 1, dims: 1, compare: 1, paint: 1, animate: 1, autospin: 1, ar: 1, guide: 1, maxParts: 999, scenes: ['showroom', 'blueprint', 'sunset', 'studio', 'light', 'day'] }
+  starter:  { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 0, xray: 0, wire: 0, cutaway: 0, dims: 0, compare: 0, paint: 0, animate: 0, autospin: 1, ar: 0, guide: 0, bom: 0, maxParts: 8,   scenes: ['studio', 'light'] },
+  standard: { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 0, dims: 1, compare: 0, paint: 0, animate: 0, autospin: 1, ar: 1, guide: 0, bom: 0, maxParts: 20,  scenes: ['showroom', 'studio', 'light'] },
+  pro:      { explode: 1, drag: 1, labels: 1, partsList: 1, info: 1, specs: 1, xray: 1, wire: 1, cutaway: 1, dims: 1, compare: 1, paint: 1, animate: 1, autospin: 1, ar: 1, guide: 1, bom: 1, maxParts: 999, scenes: ['showroom', 'blueprint', 'sunset', 'studio', 'light', 'day'] }
 };
 var SCENE_NAMES = { showroom: 'Showroom', blueprint: 'Blueprint', sunset: 'Sunset', studio: 'Studio', light: 'White', day: 'Outdoor', night: 'Night' };
 var LOOKS = {
@@ -267,7 +267,7 @@ function start(cfg) {
         if (dir.length() < R * 0.05) dir.set(0, 1, 0);
         dir.normalize().multiplyScalar(R * 0.9 * (cfg.explodeScale || 1));
       }
-      var p = { id: 'p' + i, key: d.node || n.name, node: n, name: d.name || n.name || ('Part ' + (i + 1)), cat: d.category || 'Parts', desc: d.description || '',
+      var p = { id: 'p' + i, key: d.node || n.name, node: n, name: d.name || n.name || ('Part ' + (i + 1)), cat: d.category || 'Parts', desc: d.description || '', partNo: d.partNo || '', qty: d.qty || 1,
         shell: !!d.shell, dir: dir, ex: 0, exT: 0, user: new THREE.Vector3(), userT: new THREE.Vector3(),
         origWorld: n.getWorldPosition(new THREE.Vector3()), center: ctr, size: sz, mats: [], meshes: [], hidden: false, lvl: 0 };
       parts.push(p);
@@ -289,6 +289,40 @@ function start(cfg) {
       n.add(piv);
       return { node: piv, axis: V3(a.axis ? a.axis[0] : 0, a.axis ? a.axis[1] : 1, a.axis ? a.axis[2] : 0).normalize(), speed: (a.speed || 1) * Math.PI * 2 };
     }).filter(Boolean);
+
+    /* ---------------- flow particles (e.g. water through a pump) ---------------- */
+    // cfg.flow = { paths: [[[x,y,z], ...], ...] in model units, color, size, speed, count, show: 'cutaway' | 'always' }
+    // Shown when the inside is visible (Cutaway or X-ray) and the product is assembled.
+    var flow = null;
+    if (cfg.flow && cfg.flow.paths && cfg.flow.paths.length) {
+      var fcurves = cfg.flow.paths.map(function (pts) { return new THREE.CatmullRomCurve3(pts.map(function (q) { return V3(q[0], q[1], q[2]); })); });
+      var per = cfg.flow.count || 26, fsz = cfg.flow.size || 0.006;
+      var fmat = new THREE.MeshBasicMaterial({ color: new THREE.Color(cfg.flow.color || '#3fb4ff'), toneMapped: false, transparent: true, opacity: 0.92, depthWrite: false });
+      var fmesh = new THREE.InstancedMesh(new THREE.SphereGeometry(fsz, 10, 6), fmat, fcurves.length * per);
+      fmesh.frustumCulled = false; fmesh.renderOrder = 5; fmesh.castShadow = false;
+      root.add(fmesh);
+      flow = { mesh: fmesh, curves: fcurves, per: per, t: 0, speed: cfg.flow.speed || 0.18, lens: fcurves.map(function (c) { return c.getLength(); }) };
+    }
+    var fM = new THREE.Matrix4(), fQ = new THREE.Quaternion(), fP = new THREE.Vector3(), fT = new THREE.Vector3(), fS = new THREE.Vector3(), fX = new THREE.Vector3(1, 0, 0);
+    function updateFlow(dt, mex) {
+      if (!flow) return;
+      var show = mex < 0.05 && (cfg.flow.show === 'always' || state.slice || state.xray);
+      flow.mesh.visible = show; if (!show) return;
+      flow.t += dt * flow.speed;
+      var k = 0;
+      flow.curves.forEach(function (c, ci) {
+        var stretch = 2.6;
+        for (var i = 0; i < flow.per; i++) {
+          var u = (flow.t / Math.max(flow.lens[ci], 1e-6) + i / flow.per + ci * 0.137) % 1;
+          c.getPointAt(u, fP); c.getTangentAt(u, fT);
+          fQ.setFromUnitVectors(fX, fT.normalize());
+          var fade = Math.min(1, u * 8, (1 - u) * 8);
+          fS.set(stretch * fade, fade, fade);
+          fM.compose(fP, fQ, fS); flow.mesh.setMatrixAt(k++, fM);
+        }
+      });
+      flow.mesh.instanceMatrix.needsUpdate = true;
+    }
 
     /* ---------------- state ---------------- */
     var state = { xray: false, wire: false, labels: false, dims: false, compare: false, slice: false, spin: false, animate: false, lock: false };
@@ -407,13 +441,39 @@ function start(cfg) {
         var row = e.target.closest('.row-p'); if (row) select(byId(row.dataset.id));
       };
     }
+    /* ---------------- spare-parts list + enquiry (Pro) ---------------- */
+    // parts get "partNo" (and optional "qty"); cfg.enquiry = { email, subject } adds Enquire links that open the visitor's email app
+    function enquiryHref(list) {
+      if (!cfg.enquiry || !cfg.enquiry.email) return '';
+      var body = 'Hello,\n\nPlease send price and availability for:\n\n' + list.map(function (p) { return '- ' + p.partNo + '  ' + p.name + '  x' + p.qty; }).join('\n') +
+        '\n\nProduct: ' + (cfg.title || '') + '\nCompany:\nName:\nPhone:\n';
+      return 'mailto:' + cfg.enquiry.email + '?subject=' + encodeURIComponent((cfg.enquiry.subject || 'Spare parts enquiry') + (list.length === 1 ? ': ' + list[0].partNo : '')) + '&body=' + encodeURIComponent(body);
+    }
+    var bomParts = parts.filter(function (p) { return p.partNo; });
+    if (F.bom && bomParts.length) {
+      var bBOM = $('#bBOM'), bomBox = $('#bom');
+      bBOM.classList.remove('hide');
+      var sorted = bomParts.slice().sort(function (a, b) { return a.partNo < b.partNo ? -1 : 1; });
+      bomBox.innerHTML = '<div class="bomH"><b>Spare parts list</b><button class="x" id="bomX" aria-label="Close">&times;</button></div>' +
+        '<div class="bomS"><table class="kv bomT"><tr><th>Part no.</th><th>Part</th><th>Qty</th>' + (cfg.enquiry ? '<th></th>' : '') + '</tr>' +
+        sorted.map(function (p) { return '<tr data-id="' + p.id + '"><td><b>' + esc(p.partNo) + '</b></td><td>' + esc(p.name) + '</td><td>' + p.qty + '</td>' +
+          (cfg.enquiry ? '<td><a class="lnk" target="_blank" rel="noopener" href="' + esc(enquiryHref([p])) + '">Enquire</a></td>' : '') + '</tr>'; }).join('') + '</table></div>' +
+        (cfg.enquiry ? '<div class="acts"><a class="btn pri" target="_blank" rel="noopener" href="' + esc(enquiryHref(sorted)) + '">Email the full list</a></div>' : '');
+      bBOM.onclick = function () { var on = bomBox.classList.toggle('hide') === false; bBOM.setAttribute('aria-pressed', on ? 'true' : 'false'); };
+      bomBox.onclick = function (e) {
+        if (e.target.id === 'bomX') { bomBox.classList.add('hide'); bBOM.setAttribute('aria-pressed', 'false'); return; }
+        if (e.target.closest('a')) return;
+        var tr = e.target.closest('tr[data-id]'); if (tr) { select(parts.filter(function (x) { return x.id === tr.dataset.id; })[0]); if (window.innerWidth <= 820) { bomBox.classList.add('hide'); bBOM.setAttribute('aria-pressed', 'false'); } }
+      };
+    }
     function renderInfo() {
       var el = $('#sel');
       if (!selected) { el.innerHTML = '<p class="empty">Click or tap any part to see what it is. ' + (F.drag ? 'Drag it to pull it out.' : '') + '</p>'; return; }
       var p = selected;
       el.innerHTML = '<span class="tag">' + esc(p.cat) + '</span><h2>' + esc(p.name) + '</h2>' + (p.desc ? '<p>' + esc(p.desc) + '</p>' : '') +
-        '<table class="kv"><tr><td>Width</td><td>' + fmtLen(p.size.x) + '</td></tr><tr><td>Height</td><td>' + fmtLen(p.size.y) + '</td></tr><tr><td>Depth</td><td>' + fmtLen(p.size.z) + '</td></tr></table>' +
-        '<div class="acts"><button class="btn" id="bPut">Put back</button><button class="btn" id="bIso">' + (isolated === p ? 'Show all' : 'Isolate') + '</button></div>';
+        '<table class="kv">' + (p.partNo ? '<tr><td>Part no.</td><td><b>' + esc(p.partNo) + '</b></td></tr>' + (p.qty > 1 ? '<tr><td>Quantity</td><td>' + p.qty + '</td></tr>' : '') : '') + '<tr><td>Width</td><td>' + fmtLen(p.size.x) + '</td></tr><tr><td>Height</td><td>' + fmtLen(p.size.y) + '</td></tr><tr><td>Depth</td><td>' + fmtLen(p.size.z) + '</td></tr></table>' +
+        '<div class="acts"><button class="btn" id="bPut">Put back</button><button class="btn" id="bIso">' + (isolated === p ? 'Show all' : 'Isolate') + '</button>' +
+        (p.partNo && enquiryHref ? '<a class="btn pri" target="_blank" rel="noopener" href="' + esc(enquiryHref([p])) + '">Enquire</a>' : '') + '</div>';
       $('#bPut').onclick = function () { p.userT.set(0, 0, 0); p.exT = 0; };
       $('#bIso').onclick = function () { isolated = isolated === p ? null : p; refreshVis(); renderInfo(); };
     }
@@ -770,6 +830,13 @@ function start(cfg) {
       b.onclick = function () { slice.axis = b.dataset.axis; document.querySelectorAll('[data-axis]').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); }); updateClip(); };
     });
     $('#slicePos').addEventListener('input', function () { slice.pos = this.value / 100; updateClip(); });
+    // cfg.cutaway = { axis: 'x' | 'z', pos: 0..1 } sets the starting cut (e.g. 'z' to slice a pump front-to-back through its casing)
+    if (cfg.cutaway) {
+      if (cfg.cutaway.axis === 'x' || cfg.cutaway.axis === 'z') slice.axis = cfg.cutaway.axis;
+      if (typeof cfg.cutaway.pos === 'number') slice.pos = clamp(cfg.cutaway.pos, 0, 1);
+      document.querySelectorAll('[data-axis]').forEach(function (x) { x.setAttribute('aria-pressed', x.dataset.axis === slice.axis ? 'true' : 'false'); });
+      $('#slicePos').value = Math.round(slice.pos * 100); updateClip();
+    }
 
     function togglePanel(btn, panel, other, otherBtn, allowed) {
       if (!allowed) { btn.classList.add('hide'); panel.classList.add('hide'); return; }
@@ -821,6 +888,7 @@ function start(cfg) {
         if (!(drag && drag.part === p)) p.user.lerp(p.userT, k);
       });
       if (state.animate) spins.forEach(function (s2) { s2.node.rotateOnAxis(s2.axis, s2.speed * dt); });
+      updateFlow(dt, meanEx());
       if (state.spin) camT.theta += dt * 0.35;
       applyPositions();
       camT.ty = CENTER.y + lift * 0.6 + (camT.ty - CENTER.y - lastLift * 0.6); lastLift = lift;
@@ -959,14 +1027,17 @@ function start(cfg) {
       ssao.normalRenderTarget.depthTexture.type = THREE.UnsignedIntType;   // 24-bit depth: no banding on big scenes
       ssao.kernelRadius = R * 0.07;
       var span = camera.far - camera.near; ssao.minDistance = R * 0.003 / span; ssao.maxDistance = R * 0.22 / span;
-      var bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), 0.9, 0.5, 0.82);
+      var bloom = new THREE.UnrealBloomPass(new THREE.Vector2(Math.ceil(W / 2), Math.ceil(H / 2)), 0.9, 0.5, 0.0);
+      try { bloom.compositeMaterial.uniforms.bloomFactors.value = [1.0, 0.85, 0.5, 0.0, 0.0]; } catch (e) {}   // tight glow; the widest blur levels make a blocky haze
+      // selective glow: only glowing materials are drawn into this target (everything else black), then blurred
+      var glowRT = new THREE.WebGLRenderTarget(Math.ceil(W / 2), Math.ceil(H / 2), { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
       var comp = new THREE.ShaderMaterial({
-        uniforms: { tColor: { value: rt.texture }, tAO: { value: ssao.blurRenderTarget.texture }, tDepth: { value: ssao.normalRenderTarget.depthTexture },
+        uniforms: { tColor: { value: rt.texture }, tBloom: { value: bloom.renderTargetsHorizontal[0].texture }, bloomAmt: { value: 0 }, tAO: { value: ssao.blurRenderTarget.texture }, tDepth: { value: ssao.normalRenderTarget.depthTexture },
           aoAmt: { value: 0 }, dof: { value: 0 }, focus: { value: 1 }, keep: { value: 0 }, near: { value: camera.near }, far: { value: camera.far }, px: { value: new THREE.Vector2(1 / W, 1 / H) } },
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
         fragmentShader: [
           '#include <packing>',
-          'uniform sampler2D tColor, tAO, tDepth; uniform float aoAmt, dof, focus, keep, near, far; uniform vec2 px; varying vec2 vUv;',
+          'uniform sampler2D tColor, tAO, tDepth, tBloom; uniform float bloomAmt, aoAmt, dof, focus, keep, near, far; uniform vec2 px; varying vec2 vUv;',
           'vec3 col(vec2 uv){ return texture2D(tColor, uv).rgb * mix(1.0, texture2D(tAO, uv).r, aoAmt); }',
           'float dist(vec2 uv){ return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, near, far); }',
           'float blurAt(vec2 uv){ return clamp(max(abs(dist(uv) - focus) - keep, 0.0) / focus * 2.5, 0.0, 1.0) * dof * 8.0; }',
@@ -979,13 +1050,14 @@ function start(cfg) {
           '        vec2 uv = vUv + vec2(cos(a), sin(a)) * r * px; float w = step(coc - 2.0, blurAt(uv)) + 0.05; acc += col(uv) * w; n += w; }',
           '      c = acc / n; }',
           '  }',
+          '  c += max(texture2D(tBloom, vUv).rgb - 0.012, 0.0) * bloomAmt;',   // drop the faint 8-bit tail (shows as blocky haze on dark backgrounds)
           '  gl_FragColor = linearToOutputTexel(vec4(c, 1.0));',
           '}'].join('\n'),
         depthTest: false, depthWrite: false, toneMapped: false
       });
       var qScene = new THREE.Scene(), qCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), comp);
       q.frustumCulled = false; qScene.add(q);
-      post = { rt: rt, ssao: ssao, bloom: bloom, comp: comp, qScene: qScene, qCam: qCam, W: W, H: H, slow: 0, n: 0, t0: performance.now() };
+      post = { rt: rt, glowRT: glowRT, black: new THREE.MeshBasicMaterial({ color: 0x000000 }), ssao: ssao, bloom: bloom, comp: comp, qScene: qScene, qCam: qCam, W: W, H: H, slow: 0, n: 0, t0: performance.now() };
       checkGlow();
     }
     function postResize() {
@@ -993,7 +1065,7 @@ function start(cfg) {
       var sz = renderer.getDrawingBufferSize(new THREE.Vector2());
       if (sz.x === post.W && sz.y === post.H) return;
       post.W = sz.x; post.H = sz.y; post.rt.setSize(sz.x, sz.y); post.ssao.setSize(Math.ceil(sz.x / 2), Math.ceil(sz.y / 2));
-      post.bloom.setSize(sz.x, sz.y); post.comp.uniforms.px.value.set(1 / sz.x, 1 / sz.y);
+      post.bloom.setSize(Math.ceil(sz.x / 2), Math.ceil(sz.y / 2)); post.glowRT.setSize(Math.ceil(sz.x / 2), Math.ceil(sz.y / 2)); post.comp.uniforms.px.value.set(1 / sz.x, 1 / sz.y);
     }
     function draw(o) {
       o = o || {};
@@ -1014,9 +1086,24 @@ function start(cfg) {
           post.ssao.renderPass(renderer, post.ssao.ssaoMaterial, post.ssao.ssaoRenderTarget);
           post.ssao.renderPass(renderer, post.ssao.blurMaterial, post.ssao.blurRenderTarget);
         }
-        if (bloomOn) { post.bloom.strength = 0.9 * (cfg.bloom || 1); post.bloom.render(renderer, null, post.rt, 0, false); }
+        if (bloomOn) {
+          // draw only the glowing materials (others in black so they still hide what's behind them), blur that, add it on top
+          var swapped = [], hid = [];
+          scene.traverse(function (o) {
+            if (o === sky || o === floor || o === contact) { if (o.visible) { o.visible = false; hid.push(o); } return; }
+            if (!o.isMesh || o.isInstancedMesh) return;
+            var glows = asArr(o.material).some(function (m) { return m.emissive && m.userData && m.userData.baseEI !== undefined && m.userData.baseEI * Math.max(m.emissive.r, m.emissive.g, m.emissive.b) > 0.25 && m.userData.baseEmissive === m.emissive.getHex(); });
+            if (!glows) { swapped.push([o, o.material]); o.material = post.black; }
+          });
+          var bg = scene.background; scene.background = null;
+          var cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
+          renderer.setRenderTarget(post.glowRT); renderer.setClearColor(0x000000, 1); renderer.clear(); renderer.render(scene, camera); renderer.setClearColor(cc, ca);
+          scene.background = bg;
+          swapped.forEach(function (x) { x[0].material = x[1]; }); hid.forEach(function (o) { o.visible = true; });
+          post.bloom.render(renderer, null, post.glowRT, 0, false);
+        }
         var cu = post.comp.uniforms;
-        cu.aoAmt.value = aoOn ? 0.75 * (cfg.ao || 1) : 0; cu.dof.value = dof; cu.near.value = camera.near; cu.far.value = camera.far;
+        cu.aoAmt.value = aoOn ? 0.75 * (cfg.ao || 1) : 0; cu.bloomAmt.value = bloomOn ? 1.1 * (cfg.bloom || 1) : 0; cu.dof.value = dof; cu.near.value = camera.near; cu.far.value = camera.far;
         var fp = selected ? selected.node.getWorldPosition(new THREE.Vector3()) : null;
         cu.focus.value = fp ? camera.position.distanceTo(fp) : cam.r; cu.keep.value = R * 0.55;
         renderer.setRenderTarget(null); renderer.render(post.qScene, post.qCam);
